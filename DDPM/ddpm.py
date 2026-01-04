@@ -13,17 +13,6 @@ from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import save_image
 from unet import UNet
 
-# Train algo:
-# repeat:
-#   x_0 ~ q(x_0) -- choose some random sample from the data
-#   t ~ Uniform({1, ..., T}) -- choose some random timestamp uniformly, based on chosen T
-#   ε ~ N(0, I) -- create some noise with the same size of the data samples
-#   Take gradient descent step on
-#       delta_theta ||ε - ε_theta (sqrt(alpha-bar_t) x_0 + sqrt(1 - alpha-bar_t) * ε , t)||^ 2
-#   until converged
-# for (int i = 0; i < 100; )
-#
-
 
 class DDPM(nn.Module):
     alpha_bar: torch.Tensor
@@ -39,6 +28,7 @@ class DDPM(nn.Module):
         self.register_buffer("alpha_bar", torch.cumprod(self.alpha, dim=0))
 
         self.unet = UNet(T)
+        self.loss_fn = nn.MSELoss
 
     def forward_process(self, x0: torch.Tensor, t: torch.Tensor):
         epsilon = torch.randn_like(x0)
@@ -77,9 +67,6 @@ class DDPM(nn.Module):
             x_t = mean + std * z
         return x_t
 
-    def loss(self, x: torch.Tensor, y: torch.Tensor):
-        return
-
         # x = []
         # x[self.T] = torch.randn(image_size)
 
@@ -99,20 +86,21 @@ transform = transforms.Compose(
     ]
 )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-test = DDPM().to(device)
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# test = DDPM().to(device)
 
-img = test.reverse_process(1, torch.Size([3, 64, 64]))
-print(img.shape)
+# img = test.reverse_process(1, torch.Size([3, 64, 64]))
+# print(img.shape)
 
-img = torch.squeeze(img, dim=0)
-print(img.shape)
+# img = torch.squeeze(img, dim=0)
+# print(img.shape)
 
-save_image(img, "rev.png")
+# save_image(img, "rev.png")
 
 # dataset = datasets.ImageFolder(
 #     "/fs/nexus-scratch/ltahboub/learning-diffusion/DDPM/images", transform=transform
 # )
+
 # dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 # img, _ = dataset[0]
 # # img = test.forward_process(img, 400)
