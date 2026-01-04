@@ -28,14 +28,16 @@ class DDPM(nn.Module):
         self.register_buffer("alpha_bar", torch.cumprod(self.alpha, dim=0))
 
         self.unet = UNet(T)
-        self.loss_fn = nn.MSELoss
+        self.loss_fn = nn.MSELoss()
 
     def forward_process(self, x0: torch.Tensor, t: torch.Tensor):
         epsilon = torch.randn_like(x0)
 
         alpha_bar_t = self.alpha_bar[t].view(-1, 1, 1, 1)
 
-        return torch.sqrt(alpha_bar_t) * x0 + torch.sqrt(1.0 - alpha_bar_t) * epsilon
+        return torch.sqrt(alpha_bar_t) * x0 + torch.sqrt(
+            1.0 - alpha_bar_t
+        ) * epsilon, epsilon
 
     # @torch.no_grad()
     def reverse_process(self, batch_size, image_size=torch.Size([3, 572, 572])):
@@ -66,15 +68,6 @@ class DDPM(nn.Module):
 
             x_t = mean + std * z
         return x_t
-
-        # x = []
-        # x[self.T] = torch.randn(image_size)
-
-        # for t in range(self.T, 1, -1):
-        #     z = torch.randn(image_size)
-        #     x[t - 1] = (1 / torch.sqrt(self.alpha_bar[t])) * (
-        #         x[t] - (1 - self.alpha[t]) / (torch.sqrt(1 - self.alpha_bar[t]))
-        #     ) * self.unet(x[t], t) + self.beta[t] * z  # try setting this to beta tilde
 
 
 transform = transforms.Compose(
