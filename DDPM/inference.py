@@ -1,8 +1,10 @@
+import os
+
 import torch
 import wandb
 from ddpm import DDPM
 from torchvision.utils import save_image
-import os
+
 
 def inference(artifact_name, num_images=5, image_size=(3, 64, 64)):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,5 +31,9 @@ def inference(artifact_name, num_images=5, image_size=(3, 64, 64)):
 
                 print(f"Saved generated_{i}.png")
 
+                print(f"Saved generated_{i}.png")
+
+
 if __name__ == "__main__":
+    pass
     # inference("your-wandb-username/DDPM/ddpm-checkpoint")

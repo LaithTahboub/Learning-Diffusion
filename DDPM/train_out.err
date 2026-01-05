@@ -1,0 +1,24 @@
+wandb: Currently logged in as: tahboub-laith11 (tahboub-laith11-university-of-maryland) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.23.1
+wandb: Run data is saved locally in /fs/nexus-scratch/ltahboub/learning-diffusion/DDPM/wandb/run-20260105_091801-m7jjplck
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run Quick Test
+wandb: ⭐️ View project at https://wandb.ai/tahboub-laith11-university-of-maryland/DDPM
+wandb: 🚀 View run at https://wandb.ai/tahboub-laith11-university-of-maryland/DDPM/runs/m7jjplck
+wandb: updating run metadata
+wandb: uploading history steps 2003-2004, summary, console lines 54-67
+wandb: 
+wandb: Run history:
+wandb:         epoch ▁▁▁▂▂▂▃▃▃▃▃▃▄▄▄▄▅▅▅▅▅▅▅▅▆▆▆▇▇▇▇▇▇▇▇█████
+wandb: learning_rate ▁▁▁▁▂▂▂▂▂▂▃▃▃▄▄▄▄▄▄▄▄▄▅▅▅▅▅▆▆▆▇▇▇▇▇█████
+wandb:          loss ███████████████▇▇▇▇▇▆▆▆▆▅▅▅▅▅▄▄▄▄▃▃▃▃▁▂▁
+wandb: 
+wandb: Run summary:
+wandb:         epoch 19
+wandb: learning_rate 0.0
+wandb:          loss 0.59172
+wandb: 
+wandb: 🚀 View run Quick Test at: https://wandb.ai/tahboub-laith11-university-of-maryland/DDPM/runs/m7jjplck
+wandb: ⭐️ View project at: https://wandb.ai/tahboub-laith11-university-of-maryland/DDPM
+wandb: Synced 5 W&B file(s), 5 media file(s), 2 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260105_091801-m7jjplck/logs

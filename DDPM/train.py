@@ -16,6 +16,7 @@ from torchvision import datasets, transforms
 from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import save_image
 
+
 # Train algo:
 # repeat:
 #   x_0 ~ q(x_0) -- choose some random sample from the data
@@ -26,6 +27,30 @@ from torchvision.utils import save_image
 #   until converged
 # for (int i = 0; i < 100; )
 #
+#
+def save_checkpoint(model, optimizer, scheduler, epoch, run):
+    checkpoint = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "T": model.T,  # save hyperparameters needed to reconstruct the model
+    }
+
+    # Save locally first
+    checkpoint_path = f"{run.config.MODELS_PATH}/checkpoint_epoch_{epoch}.pt"
+    torch.save(checkpoint, checkpoint_path)
+
+    # Log to wandb as an artifact
+    artifact = wandb.Artifact(
+        name="ddpm-checkpoint",
+        type="model",
+        description=f"DDPM checkpoint at epoch {epoch}",
+    )
+    artifact.add_file(checkpoint_path)
+    run.log_artifact(artifact)
+
+    print(f"Checkpoint saved at epoch {epoch}")
 
 
 def load_data(config):
@@ -59,7 +84,7 @@ def load_data(config):
 
 
 def main():
-    with wandb.init(project="DDPM", config=CONFIG) as run:
+    with wandb.init(project="DDPM", config=CONFIG, name="Big Test") as run:
         parser = argparse.ArgumentParser()
         parser.add_argument("--num_epochs", type=int, default=run.config.NUM_EPOCHS)
         parser.add_argument("--T", type=int, default=run.config.T_)
@@ -89,8 +114,8 @@ def main():
         min_lr = args.min_lr
         max_lr = args.max_lr
 
-        print(img_size)
-        print(batch_size)
+        # print(img_size)
+        # print(batch_size)
 
         # init data, model, and optimizer
         device = (
@@ -170,6 +195,13 @@ def main():
             print(
                 f"Epoch [{epoch + 1}/{num_epochs}], Loss: {avg_loss:.4f}, LR: {optimizer.param_groups[0]['lr']:.6f}"
             )
+
+            if (epoch + 1) % 100 == 0:
+                save_checkpoint(model, optimizer, scheduler, epoch, run)
+
+        # save final checkpoint
+        save_checkpoint(model, optimizer, scheduler, num_epochs - 1, run)
+
         # test with some basic inference
 
         torch.cuda.empty_cache()
