@@ -5,15 +5,16 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-from config import *
+import wandb
+from config import CONFIG
 from ddpm import DDPM
 from PIL import Image
 from torch import nn
+from torch.optim import AdamW, lr_scheduler
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import save_image
-from unet import UNet
 
 # Train algo:
 # repeat:
@@ -27,18 +28,18 @@ from unet import UNet
 #
 
 
-def load_data(batch_size=32, img_size=64):
+def load_data(config):
     transform = transforms.Compose(
         [
-            transforms.Resize(img_size),
+            transforms.Resize(config.IMAGE_SIZE),
             # # transforms.CenterCrop(224),
             transforms.ToTensor(),
-            # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ]
     )
-    dataset = datasets.ImageFolder(DATASET_PATH, transform=transform)
+    dataset = datasets.ImageFolder(config.DATASET_PATH, transform=transform)
 
-    train_size = int(len(dataset) * 0.8) - (int(len(dataset) * 0.8) % batch_size)
+    train_size = int(len(dataset) * 0.8) - (int(len(dataset) * 0.8) % config.BATCH_SIZE)
     print(len(dataset))
     print(train_size)
     val_size = int(len(dataset) * ((len(dataset) - train_size) / len(dataset)) / 2)
@@ -48,9 +49,9 @@ def load_data(batch_size=32, img_size=64):
         dataset, [train_size, val_size, test_size]
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=config.BATCH_SIZE, shuffle=False)
 
     # datas[n_images, C, H, W]
 
@@ -58,83 +59,150 @@ def load_data(batch_size=32, img_size=64):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=EPOCHS)
-    parser.add_argument("--T", type=int, default=T_)
-    parser.add_argument("--batch_size", type=int, default=BATCH_SIZE)
-    parser.add_argument("--num_images", type=int, default=DATASET_SIZE)
-    parser.add_argument("--img_size", type=int, default=IMAGE_SIZE)
+    with wandb.init(project="DDPM", config=CONFIG) as run:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--num_epochs", type=int, default=run.config.NUM_EPOCHS)
+        parser.add_argument("--T", type=int, default=run.config.T_)
+        parser.add_argument("--batch_size", type=int, default=run.config.BATCH_SIZE)
+        parser.add_argument("--num_images", type=int, default=run.config.DATASET_SIZE)
+        parser.add_argument("--img_size", type=int, default=run.config.IMAGE_SIZE)
+        parser.add_argument("--min_lr", type=float, default=run.config.MIN_LR)
+        parser.add_argument("--max_lr", type=float, default=run.config.MAX_LR)
+        parser.add_argument("--warmup_steps", type=int, default=run.config.WARMUP_STEPS)
+        parser.add_argument(
+            "--weight_decay", type=float, default=run.config.WEIGHT_DECAY
+        )
 
-    # other args
+        # other args
 
-    # initialize args
-    args = parser.parse_args()
+        # initialize args
+        args = parser.parse_args()
 
-    # hyperparameters
-    epochs = args.epochs
-    T = args.T
-    batch_size = args.batch_size
-    num_images = args.num_images
-    img_size = args.img_size
-    print(img_size)
-    print(batch_size)
+        # hyperparameters
+        num_epochs = args.num_epochs
+        T = args.T
+        batch_size = args.batch_size
+        num_images = args.num_images
+        img_size = args.img_size
+        weight_decay = args.weight_decay
+        warmup_steps = args.warmup_steps
+        min_lr = args.min_lr
+        max_lr = args.max_lr
 
-    # init data, model, and optimizer
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        print(img_size)
+        print(batch_size)
 
-    train_data, val_data, test_data = load_data(
-        img_size=img_size, batch_size=batch_size
-    )
+        # init data, model, and optimizer
+        device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
 
-    model = DDPM(T=T)
-    model.to(device)
+        train_data, val_data, test_data = load_data(run.config)
 
-    optimizer = optim.SGD(model.parameters(), lr=0.01)
+        model = DDPM(T=T)
+        model.to(device)
 
-    # train process
+        # optim
+        optimizer = AdamW(
+            params=model.parameters(),  # [p for p in model.parameters() if p.requires_grad]
+            lr=max_lr,
+            # eps=1e-4,  # so much pain!
+            weight_decay=weight_decay,
+        )
 
-    for epoch in range(min(50, epochs)):
-        epoch_loss = 0.0
-        num_batches = 0
+        # lr scheduler
+        scheduler = lr_scheduler.SequentialLR(
+            optimizer=optimizer,
+            schedulers=[
+                lr_scheduler.LambdaLR(  # warmup
+                    optimizer=optimizer,
+                    lr_lambda=lambda step: (step / warmup_steps),
+                ),
+                lr_scheduler.CosineAnnealingLR(  # slow cosine decay
+                    optimizer=optimizer,
+                    T_max=num_epochs
+                    * (len(train_data) if train_data is not None else 0)
+                    - warmup_steps,
+                    eta_min=min_lr,
+                ),
+            ],
+            milestones=[warmup_steps],
+        )
 
-        for b, batch in enumerate(train_data):
-            images, _ = batch
-            images = images.to(device)
+        # train process
 
-            rand_timestamps = torch.randint(
-                0, 999, torch.Size([batch_size]), device=device
+        run.watch(model, log="all", log_freq=10)
+
+        for epoch in range(min(500, num_epochs)):
+            epoch_loss = 0.0
+            num_batches = 0
+
+            for b, batch in enumerate(train_data):
+                images, _ = batch
+                images = images.to(device)
+
+                rand_timestamps = torch.randint(
+                    0, 999, torch.Size([batch_size]), device=device
+                )
+
+                noisy_images, epsilon = model.forward_process(images, rand_timestamps)
+
+                batch_preds = model.unet.forward(noisy_images, rand_timestamps)
+
+                loss = model.loss_fn(epsilon, batch_preds)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item()
+                num_batches += 1
+
+                run.log(
+                    {
+                        "epoch": epoch,
+                        "loss": loss,
+                        "learning_rate": optimizer.param_groups[0]["lr"],
+                    }
+                )
+
+            avg_loss = epoch_loss / num_batches
+            scheduler.step()
+
+            print(
+                f"Epoch [{epoch + 1}/{num_epochs}], Loss: {avg_loss:.4f}, LR: {optimizer.param_groups[0]['lr']:.6f}"
             )
+        # test with some basic inference
 
-            noisy_images, epsilon = model.forward_process(images, rand_timestamps)
+        torch.cuda.empty_cache()
+        with torch.no_grad():
+            # gen n images:
 
-            batch_preds = model.unet.forward(noisy_images, rand_timestamps)
+            num_infer_imgs = 5
 
-            loss = model.loss_fn(epsilon, batch_preds)
+            for i in range(num_infer_imgs):
+                run.log(
+                    {
+                        "Images Generated": wandb.Image(
+                            DDPM.denorm(model.reverse_process(1)),
+                            caption=f"Image {i + 1}",
+                        )
+                    }
+                )
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            epoch_loss += loss.item()
-            num_batches += 1
-
-            # for x, img in enumerate(images):
-            #     save_image(
-            #         img,
-            #         f"/fs/nexus-scratch/ltahboub/learning-diffusion/DDPM/del/img{x}.png",
-            #     )
-            #     if x > 10:
-            #         break
-
-            # break
-
-        print(f"Epoch [{epoch + 1}/{epochs}], Loss: {epoch_loss / num_batches:.4f}")
-
-    # test with some basic inference
-
-    torch.cuda.empty_cache()
-    with torch.no_grad():
-        save_image(model.reverse_process(1), "basic-test2.png")
+        #     save_image(
+        #         DDPM.denorm(model.reverse_process(1)),
+        #         f"{run.config.INFERENCE_PATH}/500-epoch/1.png",
+        #     )
+        #     save_image(
+        #         DDPM.denorm(model.reverse_process(1)),
+        #         f"{run.config.INFERENCE_PATH}/500-epoch/2.png",
+        #     )
+        #     save_image(
+        #         DDPM.denorm(model.reverse_process(1)),
+        #         f"{run.config.INFERENCE_PATH}/500-epoch/3.png",
+        #     )
+        run.finish()
 
 
 if __name__ == "__main__":

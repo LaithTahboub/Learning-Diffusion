@@ -69,32 +69,8 @@ class DDPM(nn.Module):
             x_t = mean + std * z
         return x_t
 
-
-transform = transforms.Compose(
-    [
-        transforms.Resize(64),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ]
-)
-
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# test = DDPM().to(device)
-
-# img = test.reverse_process(1, torch.Size([3, 64, 64]))
-# print(img.shape)
-
-# img = torch.squeeze(img, dim=0)
-# print(img.shape)
-
-# save_image(img, "rev.png")
-
-# dataset = datasets.ImageFolder(
-#     "/fs/nexus-scratch/ltahboub/learning-diffusion/DDPM/images", transform=transform
-# )
-
-# dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-# img, _ = dataset[0]
-# # img = test.forward_process(img, 400)
-# save_image(img, "noisy.png")  #
+    @staticmethod
+    def denorm(x: torch.Tensor):
+        if x.dim() == 4:
+            x = x[0]
+        return (x + 1) / 2
