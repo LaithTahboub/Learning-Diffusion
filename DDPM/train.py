@@ -141,9 +141,7 @@ def main():
                 images, _ = batch
                 images = images.to(device)
 
-                rand_timestamps = torch.randint(
-                    0, 999, torch.Size([batch_size]), device=device
-                )
+                rand_timestamps = torch.randint(0, T, (images.shape[0],), device=device)
 
                 noisy_images, epsilon = model.forward_process(images, rand_timestamps)
 
@@ -184,24 +182,12 @@ def main():
                 run.log(
                     {
                         "Images Generated": wandb.Image(
-                            DDPM.denorm(model.reverse_process(1)),
+                            DDPM.denorm(model.reverse_process(run.config))[0],
                             caption=f"Image {i + 1}",
                         )
                     }
                 )
 
-        #     save_image(
-        #         DDPM.denorm(model.reverse_process(1)),
-        #         f"{run.config.INFERENCE_PATH}/500-epoch/1.png",
-        #     )
-        #     save_image(
-        #         DDPM.denorm(model.reverse_process(1)),
-        #         f"{run.config.INFERENCE_PATH}/500-epoch/2.png",
-        #     )
-        #     save_image(
-        #         DDPM.denorm(model.reverse_process(1)),
-        #         f"{run.config.INFERENCE_PATH}/500-epoch/3.png",
-        #     )
         run.finish()
 
 

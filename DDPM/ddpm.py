@@ -40,8 +40,10 @@ class DDPM(nn.Module):
         ) * epsilon, epsilon
 
     # @torch.no_grad()
-    def reverse_process(self, batch_size, image_size=torch.Size([3, 572, 572])):
+    def reverse_process(self, config):
         device = self.alpha.device
+        batch_size = config.BATCH_SIZE
+        image_size = torch.Size([3, config.IMAGE_SIZE, config.IMAGE_SIZE])
 
         x_t = torch.randn(
             batch_size, image_size[0], image_size[1], image_size[2], device=device
@@ -59,18 +61,19 @@ class DDPM(nn.Module):
             alpha_bar_t = self.alpha_bar[t].expand(batch_size).view(-1, 1, 1, 1)
             beta_t = self.beta[t].expand(batch_size).view(-1, 1, 1, 1)
 
-            z = torch.randn_like(x_t)
-
             mean = (1 / torch.sqrt(alpha_t)) * (
                 x_t - (1 - alpha_t) / (torch.sqrt(1 - alpha_bar_t)) * eps_theta
             )
             std = torch.sqrt(beta_t)
 
-            x_t = mean + std * z
+            if t > 0:
+                z = torch.randn_like(x_t)
+                x_t = mean + std * z
+            else:
+                x_t = mean
+
         return x_t
 
     @staticmethod
     def denorm(x: torch.Tensor):
-        if x.dim() == 4:
-            x = x[0]
-        return (x + 1) / 2
+        return ((x + 1) / 2).clamp(0, 1)
