@@ -8,3 +8,20 @@ wandb: 🚀 View run at https://wandb.ai/tahboub-laith11-university-of-maryland/
 wandb: Downloading large artifact 'ddpm-checkpoint:v5', 359.80MB. 1 files...
 wandb:   1 of 1 files downloaded.  
 Done. 00:00:02.5 (144.0MB/s)
+wandb: updating run metadata
+wandb: uploading history steps 150008-150009, summary, console lines 1600-1611
+wandb: 
+wandb: Run history:
+wandb:         epoch ▁▁▁▁▂▃▃▃▃▃▄▄▄▄▅▅▅▅▅▅▆▆▆▆▆▆▆▆▆▇▇▇▇▇▇█████
+wandb: learning_rate ▁▁▁▂▂▃▆▆▇▇▇█████████████████████████████
+wandb:          loss ▅▅▄▅▃▃▇▇▄▆▄▃▃▅█▃▃▆▂▁▃▄▂▂▂▃▃▄▄▃▃▄▁▁▂▃▂▄▅▃
+wandb: 
+wandb: Run summary:
+wandb:         epoch 1999
+wandb: learning_rate 0.0002
+wandb:          loss 0.02389
+wandb: 
+wandb: 🚀 View run Big Test at: https://wandb.ai/tahboub-laith11-university-of-maryland/DDPM/runs/jetkwoda
+wandb: ⭐️ View project at: https://wandb.ai/tahboub-laith11-university-of-maryland/DDPM
+wandb: Synced 5 W&B file(s), 10 media file(s), 30 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260105_110419-jetkwoda/logs

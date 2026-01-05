@@ -49,7 +49,7 @@ class utilities:
     def load_checkpoint(run, artifact_name, device):
         # download artifact from wandb
         artifact = run.use_artifact(
-            f"{artifact_name}:v5"
+            f"{artifact_name}:latest"
         )  # or specify version like :v0
         artifact_dir = artifact.download()
 
@@ -72,7 +72,7 @@ class utilities:
                     {
                         "Images Generated": wandb.Image(
                             DDPM.denorm(model.reverse_process(run.config))[0],
-                            caption=f"Image {i + 1}",
+                            caption=f"Image {i + 5}",
                         )
                     }
                 )
