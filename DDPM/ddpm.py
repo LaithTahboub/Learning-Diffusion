@@ -42,8 +42,12 @@ class DDPM(nn.Module):
     # @torch.no_grad()
     def reverse_process(self, config):
         device = self.alpha.device
-        batch_size = config.BATCH_SIZE
-        image_size = torch.Size([3, config.IMAGE_SIZE, config.IMAGE_SIZE])
+        try:
+            batch_size = config.batch_size
+            image_size = torch.Size([3, config.image_size, config.image_size])
+        except:
+            batch_size = 32
+            image_size = torch.Size([3, 64, 64])
 
         x_t = torch.randn(
             batch_size, image_size[0], image_size[1], image_size[2], device=device

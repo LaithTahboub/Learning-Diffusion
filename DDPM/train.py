@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -13,9 +14,7 @@ from torch import nn
 from torch.optim import AdamW, lr_scheduler
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
-from torchvision.transforms.functional import to_pil_image
-from torchvision.utils import save_image
-
+from utilities import utilities
 
 # Train algo:
 # repeat:
@@ -28,29 +27,6 @@ from torchvision.utils import save_image
 # for (int i = 0; i < 100; )
 #
 #
-def save_checkpoint(model, optimizer, scheduler, epoch, run):
-    checkpoint = {
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "scheduler_state_dict": scheduler.state_dict(),
-        "T": model.T,  # save hyperparameters needed to reconstruct the model
-    }
-
-    # Save locally first
-    checkpoint_path = f"{run.config.MODELS_PATH}/checkpoint_epoch_{epoch}.pt"
-    torch.save(checkpoint, checkpoint_path)
-
-    # Log to wandb as an artifact
-    artifact = wandb.Artifact(
-        name="ddpm-checkpoint",
-        type="model",
-        description=f"DDPM checkpoint at epoch {epoch}",
-    )
-    artifact.add_file(checkpoint_path)
-    run.log_artifact(artifact)
-
-    print(f"Checkpoint saved at epoch {epoch}")
 
 
 def load_data(config):
@@ -97,6 +73,12 @@ def main():
         parser.add_argument(
             "--weight_decay", type=float, default=run.config.WEIGHT_DECAY
         )
+        parser.add_argument(
+            "--resume",
+            type=str,
+            default=None,
+            help="wandb artifact name to resume from",
+        )
 
         # other args
 
@@ -106,13 +88,13 @@ def main():
         # hyperparameters
         num_epochs = args.num_epochs
         T = args.T
-        batch_size = args.batch_size
-        num_images = args.num_images
-        img_size = args.img_size
-        weight_decay = args.weight_decay
-        warmup_steps = args.warmup_steps
-        min_lr = args.min_lr
-        max_lr = args.max_lr
+        # batch_size = args.batch_size
+        # num_images = args.num_images
+        # img_size = args.img_size
+        # weight_decay = args.weight_decay
+        # warmup_steps = args.warmup_steps
+        # min_lr = args.min_lr
+        # max_lr = args.max_lr
 
         # print(img_size)
         # print(batch_size)
@@ -124,41 +106,67 @@ def main():
 
         train_data, val_data, test_data = load_data(run.config)
 
-        model = DDPM(T=T)
-        model.to(device)
+        start_epoch = 0
 
-        # optim
-        optimizer = AdamW(
-            params=model.parameters(),  # [p for p in model.parameters() if p.requires_grad]
-            lr=max_lr,
-            # eps=1e-4,  # so much pain!
-            weight_decay=weight_decay,
-        )
+        if args.resume:
+            # Resume from checkpoint
+            model, checkpoint = utilities.load_checkpoint(run, args.resume, device)
 
-        # lr scheduler
-        scheduler = lr_scheduler.SequentialLR(
-            optimizer=optimizer,
-            schedulers=[
-                lr_scheduler.LambdaLR(  # warmup
-                    optimizer=optimizer,
-                    lr_lambda=lambda step: (step / warmup_steps),
-                ),
-                lr_scheduler.CosineAnnealingLR(  # slow cosine decay
-                    optimizer=optimizer,
-                    T_max=num_epochs
-                    * (len(train_data) if train_data is not None else 0)
-                    - warmup_steps,
-                    eta_min=min_lr,
-                ),
-            ],
-            milestones=[warmup_steps],
-        )
+            optimizer = AdamW(
+                params=model.parameters(),
+                lr=run.config.MAX_LR,
+                weight_decay=run.config.WEIGHT_DECAY,
+            )
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
-        # train process
+            # Recreate scheduler and load state
+            scheduler = lr_scheduler.SequentialLR(
+                optimizer=optimizer,
+                schedulers=[
+                    lr_scheduler.LambdaLR(
+                        optimizer, lr_lambda=lambda step: step / run.config.WARMUP_STEPS
+                    ),
+                    lr_scheduler.CosineAnnealingLR(
+                        optimizer,
+                        T_max=num_epochs * len(train_data) - run.config.WARMUP_STEPS,
+                        eta_min=run.config.MIN_LR,
+                    ),
+                ],
+                milestones=[run.config.WARMUP_STEPS],
+            )
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+            start_epoch = checkpoint["epoch"] + 1
+            print(f"Resumed from epoch {start_epoch}")
+        else:
+            # Fresh start
+            model = DDPM(T=T)
+            model.to(device)
+
+            optimizer = AdamW(
+                params=model.parameters(),
+                lr=run.config.MAX_LR,
+                weight_decay=run.config.WEIGHT_DECAY,
+            )
+
+            scheduler = lr_scheduler.SequentialLR(
+                optimizer=optimizer,
+                schedulers=[
+                    lr_scheduler.LambdaLR(
+                        optimizer, lr_lambda=lambda step: step / run.config.WARMUP_STEPS
+                    ),
+                    lr_scheduler.CosineAnnealingLR(
+                        optimizer,
+                        T_max=num_epochs * len(train_data) - run.config.WARMUP_STEPS,
+                        eta_min=run.config.MIN_LR,
+                    ),
+                ],
+                milestones=[run.config.WARMUP_STEPS],
+            )
 
         run.watch(model, log="all", log_freq=10)
 
-        for epoch in range(min(500, num_epochs)):
+        for epoch in range(start_epoch, num_epochs):
             epoch_loss = 0.0
             num_batches = 0
 
@@ -197,28 +205,18 @@ def main():
             )
 
             if (epoch + 1) % 100 == 0:
-                save_checkpoint(model, optimizer, scheduler, epoch, run)
+                utilities.save_checkpoint(model, optimizer, scheduler, epoch, run)
+            if (epoch + 1) % 300 == 0:
+                utilities.infer(model, run, num_infer_imgs=1)
 
         # save final checkpoint
-        save_checkpoint(model, optimizer, scheduler, num_epochs - 1, run)
+        utilities.save_checkpoint(model, optimizer, scheduler, num_epochs - 1, run)
 
         # test with some basic inference
 
         torch.cuda.empty_cache()
-        with torch.no_grad():
-            # gen n images:
 
-            num_infer_imgs = 5
-
-            for i in range(num_infer_imgs):
-                run.log(
-                    {
-                        "Images Generated": wandb.Image(
-                            DDPM.denorm(model.reverse_process(run.config))[0],
-                            caption=f"Image {i + 1}",
-                        )
-                    }
-                )
+        utilities.infer(model, run, num_infer_imgs=5)
 
         run.finish()
 

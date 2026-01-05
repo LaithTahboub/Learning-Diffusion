@@ -13,4 +13,4 @@
 echo "Job running on $(hostname)"
 
 source /fs/nexus-scratch/ltahboub/learning-diffusion/.venv/bin/activate
-uv run /fs/nexus-scratch/ltahboub/learning-diffusion/DDPM/train.py --num_epochs=3000
+uv run /fs/nexus-scratch/ltahboub/learning-diffusion/DDPM/train.py --num_epochs=2000 --resume=ddpm-checkpoint

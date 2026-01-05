@@ -4,7 +4,7 @@ CONFIG = {
     "MODELS_PATH": "/fs/nexus-scratch/ltahboub/models",
     "DATASET_SIZE": 4018,
     "BATCH_SIZE": 32,
-    "NUM_EPOCHS": 30,
+    "NUM_EPOCHS": 3000,
     "T_": 1000,
     "IMAGE_SIZE": 64,
     "MIN_LR": 1e-6,

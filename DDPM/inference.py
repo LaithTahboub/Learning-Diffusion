@@ -1,5 +1,6 @@
 import os
 
+import config
 import torch
 import wandb
 from ddpm import DDPM
@@ -24,7 +25,7 @@ def inference(artifact_name, num_images=5, image_size=(3, 64, 64)):
 
         with torch.no_grad():
             for i in range(num_images):
-                img = model.reverse_process(run.config)
+                img = model.reverse_process(config.CONFIG)
                 img = DDPM.denorm(img)
                 save_image(img, f"generated_{i}.png")
                 print(f"Saved generated_{i}.png")
@@ -36,4 +37,4 @@ def inference(artifact_name, num_images=5, image_size=(3, 64, 64)):
 
 if __name__ == "__main__":
     pass
-    # inference("your-wandb-username/DDPM/ddpm-checkpoint")
+    inference("tahboub-laith11-university-of-maryland/DDPM/ddpm-checkpoint")
