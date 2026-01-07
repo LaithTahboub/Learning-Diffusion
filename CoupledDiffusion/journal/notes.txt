@@ -1,0 +1,4 @@
+* Use the diffusers library, with a pipeline using Stable Diffusion 2.1 and the DDPM scheduler
+* Instead of 2D and MV samples as in Algorithm 1, make a sample with prompt A, and sample with prompt B
+* Try starting both samples from the same noise initialization (as well as different initial noises)
+* See if result looks like Figure 9 in the paper
