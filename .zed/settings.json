@@ -1,0 +1,27 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+
+{
+    "lsp": {
+        "basedpyright": {
+            "settings": {
+                "basedpyright.analysis": {
+                    "exclude": [".git", ".venv"]
+                },
+                "python": {
+                    "pythonPath": ".venv/bin/python3"
+                }
+            }
+        },
+        "pyright": {
+            "settings": {
+                "python": {
+                    "pythonPath": ".venv/bin/python3"
+                }
+            }
+        }
+    },
+    "file_scan_exclusions": [".git"]
+}

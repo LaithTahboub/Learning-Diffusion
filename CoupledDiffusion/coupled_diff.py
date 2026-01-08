@@ -1,8 +1,10 @@
 import os
 from argparse import ArgumentParser
+from types import SimpleNamespace
 
 import torch
-from diffusers import DDPMScheduler, DiffusionPipeline
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from PIL import Image
 
 
@@ -41,7 +43,7 @@ class CoupledDiffusion:
         prompt_b: str,
         lambda_: float,
         batch_size: int = 1,
-        num_inference_steps: int = 75,
+        num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
         seed_a: int = 32,
         seed_b: int | None = None,
@@ -67,10 +69,14 @@ class CoupledDiffusion:
 
         # make some noise :D. initialize latents if not provided
         if latents_a is None:
-            latents_a = CoupledDiffusion.make_initial_latents(pipe_b, 1, seed_b, gen_a)
+            latents_a = CoupledDiffusion.make_initial_latents(
+                pipe_a, batch_size, seed_a, device=device, dtype=dtype, generator=gen_a
+            )
 
         if latents_b is None:
-            latents_b = CoupledDiffusion.make_initial_latents(pipe_b, 1, seed_b, gen_b)
+            latents_b = CoupledDiffusion.make_initial_latents(
+                pipe_b, batch_size, seed_b, device=device, dtype=dtype, generator=gen_b
+            )
 
         latents_a = latents_a.clone()
         latents_b = latents_b.clone()
@@ -98,11 +104,11 @@ class CoupledDiffusion:
             alpha_t = pipe_a.scheduler.alphas_cumprod[t_idx].to(
                 device=device, dtype=dtype
             )
-            sqrt_alpha = alpha_t.sqrt()
-            sqrt_one_minus_alpha = (1.0 - alpha_t).sqrt()
+            # sqrt_alpha = alpha_t.sqrt()
+            # sqrt_one_minus_alpha = (1.0 - alpha_t).sqrt()
 
-            x0_a = (latents_a - sqrt_one_minus_alpha * eps_a) / sqrt_alpha
-            x0_b = (latents_b - sqrt_one_minus_alpha * eps_b) / sqrt_alpha
+            # # x0_a = (latents_a - sqrt_one_minus_alpha * eps_a) / sqrt_alpha
+            # # x0_b = (latents_b - sqrt_one_minus_alpha * eps_b) / sqrt_alpha
 
             # take DDPM step
             out_a = pipe_a.scheduler.step(eps_a, t, latents_a, generator=gen_a)
@@ -121,13 +127,27 @@ class CoupledDiffusion:
             else:
                 scale = torch.tensor(0.0, device=device, dtype=dtype)
 
-            latents_a = latents_a - scale * lambda_ * (x0_a - x0_b)
-            latents_b = latents_b - scale * lambda_ * (x0_b - x0_a)
+            latents_a = latents_a - scale * lambda_ * (
+                out_a.pred_original_sample - out_b.pred_original_sample
+            )
+            latents_b = latents_b - scale * lambda_ * (
+                out_b.pred_original_sample - out_a.pred_original_sample
+            )
 
         return latents_a, latents_b
 
     @staticmethod
-    def make_initial_latents(pipe, batch_size, seed, device, dtype):
+    def make_initial_latents(
+        pipe,
+        batch_size,
+        seed,
+        device,
+        dtype=torch.float32,
+        generator: torch.Generator | None = None,
+    ):
+        if generator is None:
+            generator = torch.Generator(device=device).manual_seed(seed)
+
         return torch.randn(
             (
                 batch_size,
@@ -137,7 +157,7 @@ class CoupledDiffusion:
             ),
             device=device,
             dtype=dtype,
-            generator=torch.Generator(device=device).manual_seed(seed),
+            generator=generator,
         )
 
 
@@ -157,28 +177,7 @@ def decode_latents_to_pil(pipe: DiffusionPipeline, latents: torch.Tensor | None)
     return [Image.fromarray(img) for img in images]
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument("--prompt_a", type=str, required=True)
-    parser.add_argument("--prompt_b", type=str, required=True)
-    parser.add_argument("--lambda_", type=float, default=0.05)
-    parser.add_argument("--guidance_scale", type=float, default=7.5)
-    parser.add_argument("--steps", type=int, default=75)
-    parser.add_argument("--seed_a", type=int, default=32)
-    parser.add_argument("--seed_b", type=int, default=64)
-    parser.add_argument("--model", type=str, default="manojb/stable-diffusion-2-1-base")
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="/fs/nexus-scratch/ltahboub/learning-diffusion/CoupledDiffusion/inference/experiment_outputs",
-    )
-    args = parser.parse_args()
-
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    pipe_a = retrieve_sd_pipeline(args.model)
-    pipe_b = retrieve_sd_pipeline(args.model)
-
+def experimentA(args, pipe_a, pipe_b):
     sampler = CoupledDiffusion(pipe_a, pipe_b)
 
     device = pipe_a.device
@@ -187,6 +186,9 @@ def main():
     # create initial latents (different noise for a and b)
     init_a = CoupledDiffusion.make_initial_latents(pipe_a, 1, 440, device, dtype)
     init_b = CoupledDiffusion.make_initial_latents(pipe_b, 1, 440, device, dtype)
+
+    # ensure output dir exists (fixes FileNotFoundError in Experiment B)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # experiment ste 1p : coupled run (lambda > 0)
     print(f"Running coupled diffusion (lambda={args.lambda_})...")
@@ -227,6 +229,39 @@ def main():
     )
 
     print("Saved outputs")
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument("--prompt_a", type=str, default=None)
+    parser.add_argument("--prompt_b", type=str, default=None)
+    parser.add_argument("--lambda_", type=float, default=0.05)
+    parser.add_argument("--experiment", type=str, required=True)
+    parser.add_argument("--guidance_scale", type=float, default=7.5)
+    parser.add_argument("--steps", type=int, default=50)
+    parser.add_argument("--seed_a", type=int, default=32)
+    parser.add_argument("--seed_b", type=int, default=64)
+    parser.add_argument("--model", type=str, default="manojb/stable-diffusion-2-1-base")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="/fs/nexus-scratch/ltahboub/learning-diffusion/CoupledDiffusion/inference/experiment_outputs",
+    )
+    args = parser.parse_args()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    pipe_a = retrieve_sd_pipeline(args.model)
+    pipe_b = retrieve_sd_pipeline(args.model)
+
+    if args.experiment == "A":
+        if args.prompt_a is None or args.prompt_b is None:
+            raise ValueError("Prompts can't be None for Experiment A")
+        experimentA(args, pipe_a, pipe_b)
+    # elif args.experiment == "B":
+    #     experimentB(args, pipe_a, pipe_b)
+    else:
+        raise ValueError("Experiment type not found.")
 
 
 if __name__ == "__main__":

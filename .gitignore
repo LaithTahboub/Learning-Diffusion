@@ -1,3 +1,4 @@
 DDPM/images/class_all
 wandb/
 artifacts/
+.venv/
