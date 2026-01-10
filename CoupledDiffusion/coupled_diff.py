@@ -36,6 +36,25 @@ class CoupledDiffusion:
         emb = pipe.text_encoder(tokens)[0]
         return emb.expand(batch_size, -1, -1)
 
+    @staticmethod
+    def project_vector(u, v, eps=1e-8):
+        # compute in fp32 for stability
+        u32 = u.float()
+        v32 = v.float()
+
+        u_flat = u32.view(u32.shape[0], -1)
+        v_flat = v32.view(v32.shape[0], -1)
+
+        dot_uv = (u_flat * v_flat).sum(dim=1, keepdim=True)
+        dot_vv = (v_flat * v_flat).sum(dim=1, keepdim=True)
+
+        # avoid tiny norms
+        projection_factor = dot_uv / (dot_vv + eps)
+
+        projection_factor = projection_factor.view(-1, 1, 1, 1)
+        proj = projection_factor * v32
+        return proj.to(dtype=v.dtype)
+
     @torch.no_grad()
     def __call__(
         self,
@@ -95,29 +114,31 @@ class CoupledDiffusion:
 
         # reverse loop
         for i, t in enumerate(timesteps):
-            t_idx = int(t.item())
-
             eps_a = cfg_eps(pipe_a, latents_a, t, cond_a, uncond_a)
             eps_b = cfg_eps(pipe_b, latents_b, t, cond_b, uncond_b)
 
-            # get x0 prediction
-            alpha_t = pipe_a.scheduler.alphas_cumprod[t_idx].to(
-                device=device, dtype=dtype
-            )
-            # sqrt_alpha = alpha_t.sqrt()
-            # sqrt_one_minus_alpha = (1.0 - alpha_t).sqrt()
-
-            # # x0_a = (latents_a - sqrt_one_minus_alpha * eps_a) / sqrt_alpha
-            # # x0_b = (latents_b - sqrt_one_minus_alpha * eps_b) / sqrt_alpha
-
-            # take DDPM step
+            # get x0 prediction and take DDPM step
             out_a = pipe_a.scheduler.step(eps_a, t, latents_a, generator=gen_a)
             out_b = pipe_b.scheduler.step(eps_b, t, latents_b, generator=gen_b)
+
+            # calculate diff between the two x0s and project to get parallel and ortho
+            delta_a = out_a.pred_original_sample - out_b.pred_original_sample
+            delta_b = out_b.pred_original_sample - out_a.pred_original_sample
+
+            parallel_a = CoupledDiffusion.project_vector(
+                delta_a, out_a.pred_original_sample
+            )
+            parallel_b = CoupledDiffusion.project_vector(
+                delta_b, out_b.pred_original_sample
+            )
+
+            ortho_a = delta_a - parallel_a
+            ortho_b = delta_b - parallel_b
 
             latents_a = out_a.prev_sample
             latents_b = out_b.prev_sample
 
-            # coupling based on algorithm 1
+            # coupling based on algorithm 1d
             if i < len(timesteps) - 1:
                 t_prev_int = int(timesteps[i + 1].item())
                 alpha_prev = pipe_a.scheduler.alphas_cumprod[t_prev_int].to(
@@ -127,12 +148,10 @@ class CoupledDiffusion:
             else:
                 scale = torch.tensor(0.0, device=device, dtype=dtype)
 
-            latents_a = latents_a - scale * lambda_ * (
-                out_a.pred_original_sample - out_b.pred_original_sample
-            )
-            latents_b = latents_b - scale * lambda_ * (
-                out_b.pred_original_sample - out_a.pred_original_sample
-            )
+            eta = 0.1
+
+            latents_a = latents_a - scale * lambda_ * (ortho_a + (eta) * parallel_a)
+            latents_b = latents_b - scale * lambda_ * (ortho_b + (eta) * parallel_b)
 
         return latents_a, latents_b
 
@@ -235,7 +254,7 @@ def main():
     parser = ArgumentParser()
     parser.add_argument("--prompt_a", type=str, default=None)
     parser.add_argument("--prompt_b", type=str, default=None)
-    parser.add_argument("--lambda_", type=float, default=0.05)
+    parser.add_argument("--lambda_", type=float, default=0.016)
     parser.add_argument("--experiment", type=str, required=True)
     parser.add_argument("--guidance_scale", type=float, default=7.5)
     parser.add_argument("--steps", type=int, default=50)
