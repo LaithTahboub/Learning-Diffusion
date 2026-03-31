@@ -1,0 +1,38 @@
+* Use the diffusers library, with a pipeline using Stable Diffusion 2.1 and the DDPM scheduler
+* Instead of 2D and MV samples as in Algorithm 1, make a sample with prompt A, and sample with prompt B
+* Try starting both samples from the same noise initialization (as well as different initial noises)
+* See if result looks like Figure 9 in the paper
+
+
+ELIMINATING OVERSATURATION AND ARTIFACTS OF
+HIGH GUIDANCE SCALES IN DIFFUSION MODELS:
+
+Paper makes 3 main observations about CFGs:
+1) A CFG update can be decomposed into a component that is parallel to the conditional
+model's prediction for x_0 and a component that is orthogonal the prediciton. Concretely,
+let D_theta(z_t, t, y) be a conditional diffusion model that predicts a clean sample x
+given noisy samplesand a class y that being conditioned on (text, class labels, etc.).
+The CFG update can be expressed as
+    D_hat_CFG(z_t, t, y) = D_theta(z_t, t, y_null) + w(D_theta(z_t, t, y) - D_theta(z_t, t, y_null))
+Which can be rewritten as
+    D_hat_CFG(z_t, t, y) = D_theta(z_t, t, y) + (w - 1) ΔD_t
+Where ΔD_t is the difference between the conditonal 
+
+Now, the authors 
+D_theta(z_t, t, y) = D_theta(z_t, t, y)
+
+__
+
+The main idea of the paper is that CFG with high guidance scales is the standard because its basically necessary to get decent results, but it often causes high saturation and lower image quality/realism. The authors found some creative ways to combat this saturation that comes with CFG and propose APG (adaptive projected guidance). Paper makes 3 main tweaks to CFGs:
+1) A CFG update can be decomposed into a component that is parallel to the conditional model's denoised prediction for x_0 and a component that is orthogonal to the prediction. The parallel prediction mostly just amplifies the pixels predicted by the model which is what leads to saturation. The orthogonal component, however, is what changes the direction of the updates and improves the realism. So, the authors propose to scale the parallel component of the update by a hyperparameter η <= 1. They found that when η is close to 0, saturation reduces significantly and they get more realistic results.
+2) They interpret/show that a CFG update is a single step of gradient ascent on the L2 distance between the conditional and unconditional predictions, where the learning rate is w - 1 (w is the guidance scale). Since this distance is unbounded, and inspired by their interpretation of CFG as gradient ascent, they rescale the CFG update to regulate the effect of each step. Concretely, they constrain ΔD_t to be inside a sphere with radius r (r is a hyperparameter). This ensures that ΔD_t doesn't drift too much from the conditional prediction D_theta(z_t, t, y).
+3) Also in line with the gradient ascent interpretation of CFG, they introduce a reverse momentum term beta < 0 as a final way to stabilize guidance updates. This basically causes each update to veer away from the previous update more than it would otherwise. So, the model focuses more on the current update direction.
+
+Some ideas that came to mind regarding coupled sampling:
+There are some pretty clear parallels between the two. For one, you can think of coupled sampling as guidance where one model guides the other. Like CFGs, if lambda is too high (w in CFGs), there can be undesirable effects like the sample being totally different from its original prompt (you can see this with the red car blue car prompt in the figure I sent). As we discussed, this is especially prevalent when the number of steps is high. So, in some sense, all three ideas from the paper can be adapted to coupled sampling. I think the question is, how often do we need lambda to be high enough that this over-alignment issue actually takes place? (The answer to the CFG-equivalent to this question is almost always, since high guidance scales are what lead to decent results.) I'm not sure if this is a serious problem for us, you know better, but from my experience with SD 2.1, it happens often that the desirable spatial/background alignment only comes after the undesirable foreground alignment. Again, the red car blue car prompt combo is a good example here. The two samples become truly spatially aligned at lambda=0.015, but by then the supposedly red car is already blue. So, the problem we want to tackle becomes how can we ensure that the two models help each other but don't contradict what their corresponding prompts are saying. I think it would be a good idea to adapt the three APG ideas and see if any of them help with this problem. To briefly give the adapted versions of the three ideas for coupled sampling:
+
+1) decompose the coupling update for each model into components that are parallel and orthogonal to that model’s conditional denoised prediction. Then down-weight the parallel component using a parameter eta ≤ 1.
+2) Interpret the coupling update as a guidance step and clip its magnitude so it can't dominate the model’s own denoising update, especially at higher lambda or later diffusion steps.
+3) Maintain a running coupling direction and apply a negative momentum term so that consecutive coupling updates do not keep adding to the same direction. 
+
+Let me know if you think any or all of these three sound like a good start and I can think more about them and do some tests

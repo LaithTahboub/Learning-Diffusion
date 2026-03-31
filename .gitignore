@@ -2,3 +2,5 @@ DDPM/images/class_all
 wandb/
 artifacts/
 .venv/
+CoupledDiffusion/inference/
+CoupledDiffusion/exp*/
